@@ -120,6 +120,14 @@
     svg = svg.append("g")
       .attr("transform", `translate(${margin.left}, ${margin.top})`);
 
+    const x = d3.scaleTime()
+      .domain([new Date(2017, 7, 26), new Date(2017, 8, 3)])
+      .range([0, width]);
+
+    svg.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x));
+
     function draw(zone) {
       d3.csv("data/houston.csv", (row) => {
           return {
@@ -173,10 +181,6 @@
             .offset(d3.stackOffsetWiggle);
 
           const layers = stack(nestedByDate);
-
-          const x = d3.scaleTime()
-            .domain([new Date(2017, 7, 26), new Date(2017, 8, 3)])
-            .range([0, width]);
 
           const y = d3.scaleLinear()
             .domain([d3.min(layers, stackMin), d3.max(layers, stackMax)])
@@ -277,10 +281,6 @@
             });
 
           paths.exit().remove();
-
-          svg.append("g")
-            .attr("transform", "translate(0," + height + ")")
-            .call(d3.axisBottom(x));
 
         });
     }
