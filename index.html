@@ -132,7 +132,7 @@
       d3.csv("data/houston.csv", (row) => {
           return {
             neighborhood: row.neighborhood,
-            date: new Date(row.date),
+            date: new Date(row.date.split("-").join("/")),
             level: +row.level,
             zone: row.zone.trim()
           }
