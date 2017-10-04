@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Streamgraph</title>
+  <link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css?family=Raleway" rel="stylesheet">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+</head>
+<style>
+  #desc {
+    font-family: 'Raleway', sans-serif;
+    margin-right: 1em;
+  }
+
+  #tooltip {
+    font-family: 'Lato', sans-serif;
+  }
+</style>
+
+<body>
+  <div class="row">
+    <div class="col-md-8">
+      <svg width="850" height="690"></svg>
+    </div>
+    <div class="col-md-4">
+      <div class="row" id="desc">
+        <h3>Houston’s floodwaters are receding, but they remain dangerously high in many areas</h3>
+        <p>
+          The graph at the left shows the water level over each of Houston's neighborhoods grouped by their zone between August 26th and September 2nd 2017 Hover of the graph to view detail
+        </p>
+      </div>
+      <div class="row">
+        Filter by zone:
+        <select onchange="draw(this.value)">
+            <option value="All">All</option>
+            <option value="South">South</option>
+            <option value="Northeast">Northeast</option>
+            <option value="North and West">North and West</option>
+            <option value="Downtown South">Downtown South</option>
+            <option value="Downtown Northwest">Downtown Northwest</option>
+          </select>
+      </div>
+      <div class="row">
+        <div id="tooltip" style="visibility: hidden"></div>
+      </div>
+    </div>
+  </div>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+  <script>
+    function zoneColorScale(zone) {
+      switch (zone) {
+        case "Downtown Northwest":
+          return d3
+            .scaleOrdinal(d3.schemeBlues[4])
+            .domain(["Downtown Houston",
+              "Memorial City",
+              "Shepherd Park Plaza",
+              "Independence Heights"
+            ]);
+        case "Northeast":
+          return d3.scaleOrdinal(d3.schemeGreens[3])
+            .domain(["",
+              "Kingwood",
+              "Denver Harbor"
+            ]);
+        case "South":
+          return d3.scaleOrdinal(d3.schemeGreys[4])
+            .domain(["Meyerland",
+              "Chinatown",
+              "Clear Lake",
+              "Clear Lake City"
+            ]);
+        case "Downtown South":
+          return d3.scaleOrdinal(d3.schemeOranges[7])
+            .domain(["River Oaks",
+              "Midtown",
+              "Greater Third Ward",
+              "Uptown",
+              "Museum District",
+              "Afton Oaks",
+              "Upper Kirby"
+            ]);
+        case "North and West":
+          return d3.scaleOrdinal(d3.schemePurples[3])
+            .domain(["Tomball",
+              "Willow",
+              "Hufsmith"
+            ]);
+      }
+    }
+
+    function stackMax(layer) {
+      return d3.max(layer, function(d) {
+        return d[1];
+      });
+    }
+
+    function stackMin(layer) {
+      return d3.min(layer, function(d) {
+        return d[0];
+      });
+    }
+
+
+    const margin = {
+      top: 2,
+      right: 70,
+      bottom: 20,
+      left: 40
+    };
+    const tooltipLabel = d3.select('#tooltip');
+
+    let svg = d3.select("svg");
+
+    const width = svg.attr('width') - margin.left - margin.right;
+    const height = svg.attr('height') - margin.top - margin.bottom;
+
+    svg = svg.append("g")
+      .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+    function draw(zone) {
+      d3.csv("data/houston.csv", (row) => {
+          return {
+            neighborhood: row.neighborhood,
+            date: new Date(row.date),
+            level: +row.level,
+            zone: row.zone.trim()
+          }
+        },
+        (error, data) => {
+          if (error) throw error;
+
+          const filteredData = data.filter(d => zone === "All" || d.zone == zone)
+
+          const neighborhoods = d3.nest()
+            .key(d => d.neighborhood)
+            .entries(filteredData)
+            .map(d => {
+              return {
+                "neighborhood": d.key,
+                "zone": d.values[0].zone
+              };
+            })
+            .sort((a, b) => a.zone.localeCompare(b.zone))
+            .map(d => d.neighborhood)
+
+          const nestedByDate = d3.nest()
+            .key(d => d.date)
+            .sortKeys((a, b) => new Date(a) - new Date(b))
+            .key(d => d.zone)
+            .entries(filteredData)
+            .map(d => {
+              let date = {
+                date: new Date(d.key)
+              };
+              d.values.forEach(z => {
+                z.values.forEach(n => {
+                  date[n.neighborhood] = {
+                    level: n.level,
+                    zone: z.key
+                  }
+                })
+              });
+              return date;
+            });
+
+          const stack = d3.stack()
+            .keys(neighborhoods)
+            .value((d, k) => d[k].level)
+            .order(d3.stackOrderNone)
+            .offset(d3.stackOffsetWiggle);
+
+          const layers = stack(nestedByDate);
+
+          const x = d3.scaleTime()
+            .domain([new Date(2017, 7, 26), new Date(2017, 8, 3)])
+            .range([0, width]);
+
+          const y = d3.scaleLinear()
+            .domain([d3.min(layers, stackMin), d3.max(layers, stackMax)])
+            .range([height, 0]);
+
+          const z = d3.scaleOrdinal(d3.schemeCategory20);
+
+          const area = d3.area()
+            .x((d, i) => x(d.data.date))
+            .y0(d => y(d[0]))
+            .y1(d => y(d[1]))
+            .curve(d3.curveCardinal);
+
+
+          const paths = svg.selectAll(".layer")
+            .data(layers);
+
+          //Enter
+          const pathsEnter = paths.enter()
+            .append("path")
+            .classed('layer', true);
+
+          //Merge
+          paths
+            .merge(pathsEnter)
+            .attr("d", area)
+            .attr("fill", (d, i) => {
+              return zoneColorScale(d[i].data[d.key].zone)(d.key)
+            })
+            .on('mouseover', (d, i, nodes) => {
+              d3.select(nodes[i])
+                .attr('stroke', 'black')
+                .attr("stroke-width", "0.5px");
+              svg.selectAll('.layer')
+                .transition()
+                .duration(250)
+                .attr('opacity', (d, j) => j !== i ? 0.3 : 1);
+            })
+            .on('mousemove', (d) => {
+              const mousex = d3.mouse(svg.node())[0];
+              const mouseTime = x.invert(mousex).getTime();
+              const maxTime = new Date(mouseTime + 220 * 60000).getTime();
+
+              const currentDate = d.find(d => {
+                const dTime = d.data.date.getTime();
+                return dTime >= mouseTime && dTime < maxTime;
+              });
+
+              const currentNeighborhood = currentDate.data[d.key];
+
+              const currentLevel = currentNeighborhood.level;
+              const currentZone = currentNeighborhood.zone
+
+              tooltipLabel.style('visibility', 'visible')
+                .html(
+                  `
+                                      <span style="font-size: 4em;">${currentLevel}m</span>
+                                      <br>
+                                      <span style="font-size: 1em">over water</span>
+                                      <br>
+                                      <span style="font-size: 1em">at</span>
+                                      <br>
+                                      <span style="color:${zoneColorScale(currentZone)(d.key)}; font-size: 2em">${d.key} in ${currentZone} zone</span>
+                              `
+                )
+              const gLinHor = svg.select(".domain").select(function() {
+                return this.parentNode;
+              });
+              d3.selectAll("#ejexmarca").remove();
+              /*gLinHor.append("circle")
+                .attr("id", "ejexmarca")
+                .attr("cx", mousex)
+                .attr("cy", 0)
+                .attr("r", 5)
+                .attr("stroke-width", 2)
+                .attr("fill", "transparent")
+                .attr("stroke", "green")
+              ;*/
+              gLinHor.append("line")
+                .attr("id", "ejexmarca")
+                .attr("x1", mousex)
+                .attr("y1", -5)
+                .attr("x2", mousex)
+                .attr("y2", 5)
+                .attr("stroke", "red")
+                .attr("stroke-width", 2);
+
+            })
+            .on('mouseout', (d, i, nodes) => {
+              svg.selectAll('.layer')
+                .transition()
+                .duration(250)
+                .attr('opacity', 1);
+              d3.select(nodes[i])
+                .attr('stroke-width', '0px');
+              tooltipLabel.style('visibility', 'hidden');
+              d3.selectAll("#ejexmarca").remove();
+            });
+
+          paths.exit().remove();
+
+          svg.append("g")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(x));
+
+        });
+    }
+
+    draw("All");
+  </script>
+</body>
